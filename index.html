@@ -1,0 +1,743 @@
+<!DOCTYPE html>
+<html lang="ja">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Wリーグ プレミア 選手・チーム総合分析ダッシュボード</title>
+    <!-- Plotly.js -->
+    <script src="https://cdn.plot.ly/plotly-2.27.0.min.js"></script>
+    <!-- 外部CSS -->
+    <link rel="stylesheet" href="css/style.css">
+</head>
+
+<body>
+    <header class="app-header">
+        <div class="header-inner">
+            <div class="brand-area">
+                <div class="brand-badge">W LEAGUE PREMIER ANALYTICS</div>
+                <h1>Wリーグ 選手・チーム総合分析ダッシュボード</h1>
+                <p class="subtitle">ポジションレス指標・個人ゲームログ・チーム傾向・NBAヒーブルール補正を統合したインタラクティブ分析</p>
+            </div>
+            <div class="header-actions">
+                <div class="global-rule-toggle" title="全体のシュート効率指標（3P%, eFG%, TS%）の計算ルールを切り替えます">
+                    <span class="toggle-label">集計ルール:</span>
+                    <label class="pill-radio">
+                        <input type="radio" name="rule" value="normal" checked>
+                        <span>Wリーグ公式</span>
+                    </label>
+                    <label class="pill-radio">
+                        <input type="radio" name="rule" value="nba">
+                        <span>NBAルール (ヒーブ除外)</span>
+                    </label>
+                </div>
+                <div class="csv-upload-box">
+                    <button type="button" id="open-glossary-btn" class="btn-glossary-trigger">
+                        📖 TS%・TRなどの用語集はこちらをクリック
+                    </button>
+                </div>
+            </div>
+        </div>
+
+        <!-- ナビゲーションタブ -->
+        <nav class="tab-nav">
+            <button class="tab-btn active" data-tab="tab-compare">
+                📊 1. 選手比較・リーグ俯瞰
+            </button>
+            <button class="tab-btn" data-tab="tab-player">
+                ⛹️‍♀️ 2. 選手個人 詳細分析
+            </button>
+            <button class="tab-btn" data-tab="tab-team">
+                🏀 3. チーム別・リーグ傾向
+            </button>
+            <button class="tab-btn" data-tab="tab-nba">
+                🎯 4. NBAルール(ヒーブ除外)特化分析
+            </button>
+        </nav>
+    </header>
+
+    <main class="container">
+        <!-- リーグ全体KPIサマリーバー -->
+        <section id="kpi-summary-bar" class="kpi-grid"></section>
+
+        <!-- =========================================================
+             TAB 1: 選手比較・リーグ俯瞰ダッシュボード
+             ========================================================= -->
+        <section id="tab-compare" class="tab-panel active">
+            <div class="control-panel">
+                <div class="control-group">
+                    <label class="group-label">1. 表示スタッツ基準 &amp; 出場時間フィルタ</label>
+                    <div class="filter-stack">
+                        <div class="sub-field">
+                            <span class="sub-label">集計単位:</span>
+                            <select id="stat-mode-select">
+                                <option value="avg" selected>1試合平均 (DNP除外)</option>
+                                <option value="total">シーズン通算 (合計)</option>
+                                <option value="per40">40分換算 (Per 40 Min)</option>
+                            </select>
+                        </div>
+                        <div class="sub-field">
+                            <span class="sub-label">最低出場時間 (平均):</span>
+                            <select id="min-filter-select">
+                                <option value="0">すべて表示 (0分〜)</option>
+                                <option value="5">5分以上 / 試合</option>
+                                <option value="10" selected>10分以上 / 試合 (推奨)</option>
+                                <option value="15">15分以上 / 試合</option>
+                                <option value="20">20分以上 / 試合 (主力)</option>
+                            </select>
+                        </div>
+                        <div class="sub-field">
+                            <span class="sub-label">レーダー正規化基準:</span>
+                            <select id="radar-norm-select">
+                                <option value="filtered_max" selected>フィルタ内最大値 = 100</option>
+                                <option value="league_max">リーグ全体最大値 = 100</option>
+                            </select>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group">
+                    <label class="group-label">2. チーム絞り込み &amp; クイックプリセット</label>
+                    <div class="filter-stack">
+                        <div class="sub-field">
+                            <span class="sub-label">チーム:</span>
+                            <select id="team-select">
+                                <option value="all">すべてのチーム (8チーム)</option>
+                            </select>
+                        </div>
+                        <div class="sub-field">
+                            <span class="sub-label">プリセット比較 (ワンクリック選択):</span>
+                            <div class="preset-buttons">
+                                <button type="button" class="btn-preset" data-preset="pts">🔥 得点TOP5</button>
+                                <button type="button" class="btn-preset" data-preset="reb">💪 リバウンドTOP5</button>
+                                <button type="button" class="btn-preset" data-preset="ast">🪄 アシストTOP5</button>
+                                <button type="button" class="btn-preset" data-preset="efg">🎯 高効率(eFG%)TOP5</button>
+                                <button type="button" class="btn-preset" data-preset="def">🛡️ 守備的圧力TOP5</button>
+                                <button type="button" class="btn-preset" data-preset="heave">⚡ ヒーブ恩恵TOP5</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="control-group" style="flex: 1.6;">
+                    <div class="group-label-row">
+                        <label class="group-label">3. 比較する選手を選択 <span id="selected-count-badge"
+                                class="badge-count">0名選択中</span></label>
+                        <div class="player-list-actions">
+                            <input type="text" id="player-search-input" class="input-search"
+                                placeholder="選手名・チームで検索...">
+                            <button id="deselect-all-btn" class="btn-deselect">全解除</button>
+                        </div>
+                    </div>
+                    <div id="player-checkbox-list" class="player-list"></div>
+                </div>
+            </div>
+
+            <!-- 選択選手の比較テーブル -->
+            <div class="card-section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">選択選手のスタッツ比較テーブル</h2>
+                        <p class="section-desc">選手名をクリックすると「選手個人 詳細分析」タブへ移動して試合別推移を確認できます。</p>
+                    </div>
+                </div>
+                <div class="stats-table-container">
+                    <table id="stats-table">
+                        <thead>
+                            <tr>
+                                <th>選手名 (チーム)</th>
+                                <th title="出場試合数 (先発数)">GP(GS)</th>
+                                <th title="平均出場時間(分)">MIN</th>
+                                <th title="得点">PTS</th>
+                                <th title="2ポイント成功率">2P%</th>
+                                <th title="3ポイント成功率">3P%</th>
+                                <th title="フリースロー成功率">FT%</th>
+                                <th title="有効フィールドゴール成功率">eFG%</th>
+                                <th title="トゥルーシューティング成功率">TS%</th>
+                                <th title="オフェンスリバウンド">OR</th>
+                                <th title="ディフェンスリバウンド">DR</th>
+                                <th title="トータルリバウンド">TR</th>
+                                <th title="アシスト">AST</th>
+                                <th title="スティール">STL</th>
+                                <th title="ブロック">BLK</th>
+                                <th title="ターンオーバー">TO</th>
+                                <th title="攻撃権創出 (OR + STL)">攻撃権創出</th>
+                                <th title="守備的圧力 (DR + 2×(STL+BLK))">守備的圧力</th>
+                                <th title="堅実性 ((PTS+TR+AST)/TO)">堅実性</th>
+                                <th title="貢献度指数 (Efficiency)">EFF</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- レーダーチャート & 棒グラフ -->
+            <div class="charts-grid two-col">
+                <div class="chart-card">
+                    <div id="radar-chart" class="chart-box"></div>
+                </div>
+                <div class="chart-card">
+                    <div id="bar-chart" class="chart-box"></div>
+                </div>
+            </div>
+
+            <!-- リーグ全体 2軸散布図エクスプローラー -->
+            <div class="card-section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">リーグ全体 2軸散布図エクスプローラー (ポジショニングマップ)</h2>
+                        <p class="section-desc">X軸・Y軸・バブルサイズを自在に組み合わせて、選手のプレースタイルや効率性を可視化します（チェック中の選手は強調表示）。</p>
+                    </div>
+                    <div class="scatter-controls">
+                        <label>X軸:
+                            <select id="scatter-x-select">
+                                <option value="出場時間_分" selected>出場時間 (MIN)</option>
+                                <option value="ポイント">得点 (PTS)</option>
+                                <option value="eFG%">シュート効率 (eFG%)</option>
+                                <option value="TS%">真のシュート効率 (TS%)</option>
+                                <option value="攻撃権創出">攻撃権創出 (OR+STL)</option>
+                                <option value="守備的圧力">守備的圧力 (Def Stops)</option>
+                                <option value="堅実性">堅実性 (Reliability)</option>
+                                <option value="アシスト数">アシスト (AST)</option>
+                                <option value="トータルリバウンド数">リバウンド (TR)</option>
+                                <option value="3P%">3P成功率 (3P%)</option>
+                                <option value="EFF">貢献度 (EFF)</option>
+                            </select>
+                        </label>
+                        <label>Y軸:
+                            <select id="scatter-y-select">
+                                <option value="ポイント" selected>得点 (PTS)</option>
+                                <option value="eFG%">シュート効率 (eFG%)</option>
+                                <option value="TS%">真のシュート効率 (TS%)</option>
+                                <option value="EFF">貢献度 (EFF)</option>
+                                <option value="攻撃権創出">攻撃権創出 (OR+STL)</option>
+                                <option value="守備的圧力">守備的圧力 (Def Stops)</option>
+                                <option value="堅実性">堅実性 (Reliability)</option>
+                                <option value="アシスト数">アシスト (AST)</option>
+                                <option value="トータルリバウンド数">リバウンド (TR)</option>
+                                <option value="PTS_per40">40分換算得点</option>
+                            </select>
+                        </label>
+                        <label>サイズ:
+                            <select id="scatter-size-select">
+                                <option value="EFF" selected>貢献度 (EFF)</option>
+                                <option value="ポイント">得点 (PTS)</option>
+                                <option value="出場時間_分">出場時間 (MIN)</option>
+                                <option value="トータルリバウンド数">リバウンド (TR)</option>
+                                <option value="アシスト数">アシスト (AST)</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                <div id="scatter-chart" class="chart-box-wide"></div>
+            </div>
+
+            <!-- リーグ全体ランキング＆フルスタッツ一覧 -->
+            <div class="card-section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">リーグ全体 選手ランキング &amp; フルスタッツ一覧</h2>
+                        <p class="section-desc">列ヘッダーをクリックすると並び替えできます。左端のチェックボックスで比較対象に追加できます。</p>
+                    </div>
+                    <div class="ranking-controls">
+                        <label>指標ハイライト:
+                            <select id="ranking-metric-select">
+                                <option value="ポイント" selected>得点 (PTS)</option>
+                                <option value="EFF">貢献度 (EFF)</option>
+                                <option value="出場試合数">出場試合数 (GP)</option>
+                                <option value="先発試合数">先発試合数 (GS)</option>
+                                <option value="eFG%">シュート効率 (eFG%)</option>
+                                <option value="TS%">真のシュート効率 (TS%)</option>
+                                <option value="トータルリバウンド数">リバウンド (TR)</option>
+                                <option value="アシスト数">アシスト (AST)</option>
+                                <option value="スティール数">スティール (STL)</option>
+                                <option value="ブロック数">ブロック (BLK)</option>
+                                <option value="攻撃権創出">攻撃権創出</option>
+                                <option value="守備的圧力">守備的圧力</option>
+                                <option value="堅実性">堅実性</option>
+                                <option value="PTS_per40">40分換算得点</option>
+                            </select>
+                        </label>
+                    </div>
+                </div>
+                <div class="stats-table-container max-h-table">
+                    <table id="league-ranking-table">
+                        <thead>
+                            <tr>
+                                <th>比較</th>
+                                <th data-sort="rank">順位</th>
+                                <th data-sort="選手名">選手名</th>
+                                <th data-sort="チーム名">チーム</th>
+                                <th data-sort="出場試合数" title="出場試合数">GP</th>
+                                <th data-sort="先発試合数" title="先発出場試合数">GS</th>
+                                <th data-sort="出場時間_分">MIN</th>
+                                <th data-sort="ポイント">PTS</th>
+                                <th data-sort="EFF">EFF</th>
+                                <th data-sort="eFG%">eFG%</th>
+                                <th data-sort="TS%">TS%</th>
+                                <th data-sort="2P%">2P%</th>
+                                <th data-sort="3P%">3P%</th>
+                                <th data-sort="FT%">FT%</th>
+                                <th data-sort="トータルリバウンド数">TR</th>
+                                <th data-sort="アシスト数">AST</th>
+                                <th data-sort="スティール数">STL</th>
+                                <th data-sort="ブロック数">BLK</th>
+                                <th data-sort="ターンオーバー数">TO</th>
+                                <th data-sort="攻撃権創出">攻撃権創出</th>
+                                <th data-sort="守備的圧力">守備的圧力</th>
+                                <th data-sort="堅実性">堅実性</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- =========================================================
+             TAB 2: 選手個人 詳細分析ページ
+             ========================================================= -->
+        <section id="tab-player" class="tab-panel">
+            <div class="player-selector-bar">
+                <div class="selector-group">
+                    <label for="detail-team-filter">チーム:</label>
+                    <select id="detail-team-filter">
+                        <option value="all">すべてのチーム</option>
+                    </select>
+                </div>
+                <div class="selector-group" style="flex:1; max-width: 420px;">
+                    <label for="detail-player-select">分析する選手:</label>
+                    <select id="detail-player-select"></select>
+                </div>
+                <button type="button" id="add-current-to-compare-btn" class="btn-secondary">
+                    ➕ この選手を比較リストに追加
+                </button>
+            </div>
+
+            <!-- 選手プロフィール＆KPIカード -->
+            <div id="player-profile-card" class="profile-card"></div>
+
+            <!-- 個人レーダー(対リーグ平均/チーム平均) & シュート内訳 -->
+            <div class="charts-grid two-col">
+                <div class="chart-card">
+                    <div id="player-detail-radar" class="chart-box"></div>
+                </div>
+                <div class="chart-card">
+                    <div id="player-shot-breakdown" class="chart-box"></div>
+                </div>
+            </div>
+
+            <!-- 試合別スタッツ推移グラフ & 対戦相手別スタッツ -->
+            <div class="charts-grid two-col">
+                <div class="chart-card">
+                    <div class="chart-card-toolbar">
+                        <label>推移グラフ指標:
+                            <select id="player-trend-metric">
+                                <option value="main" selected>得点・リバウンド・アシスト</option>
+                                <option value="shooting">シュート効率 (eFG% / TS% / 3P%)</option>
+                                <option value="advanced">独自指標 (EFF / 守備的圧力 / 攻撃権創出)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="player-game-trend-chart" class="chart-box"></div>
+                </div>
+                <div class="chart-card">
+                    <div id="player-opponent-chart" class="chart-box"></div>
+                </div>
+            </div>
+
+            <!-- 試合別ゲームログテーブル -->
+            <div class="card-section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">試合別ゲームログ (全ベンチ入り試合)</h2>
+                        <p class="section-desc">★印はスターター（先発出場）、⚡印はNBAルールでクォーター終了間際のヒーブ試投が除外された試合です。</p>
+                    </div>
+                </div>
+                <div class="stats-table-container">
+                    <table id="player-gamelog-table">
+                        <thead>
+                            <tr>
+                                <th>試合日</th>
+                                <th>対戦相手</th>
+                                <th>結果</th>
+                                <th>起用</th>
+                                <th>出場時間</th>
+                                <th>PTS</th>
+                                <th>2P (M-A)</th>
+                                <th>3P公式</th>
+                                <th>3P(NBA)</th>
+                                <th>FT (M-A)</th>
+                                <th>eFG%</th>
+                                <th>TS%</th>
+                                <th>OR</th>
+                                <th>DR</th>
+                                <th>TR</th>
+                                <th>AST</th>
+                                <th>STL</th>
+                                <th>BLK</th>
+                                <th>TO</th>
+                                <th>PF</th>
+                                <th>EFF</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+
+        <!-- =========================================================
+             TAB 3: チーム別・リーグ全体の傾向分析
+             ========================================================= -->
+        <section id="tab-team" class="tab-panel">
+            <div class="card-section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">Wリーグ プレミア 全8チーム 総合スタッツ一覧</h2>
+                        <p class="section-desc">1試合平均のチームスタッツと勝敗・得失点差・独自指標の比較です（列クリックでソート可能）。</p>
+                    </div>
+                </div>
+                <div class="stats-table-container">
+                    <table id="team-stats-table">
+                        <thead>
+                            <tr>
+                                <th>順位</th>
+                                <th>チーム名</th>
+                                <th>試合</th>
+                                <th>勝-敗</th>
+                                <th>勝率</th>
+                                <th>得点</th>
+                                <th>失点</th>
+                                <th>得失点差</th>
+                                <th>2P%</th>
+                                <th>3P%</th>
+                                <th>3P%(NBA)</th>
+                                <th>FT%</th>
+                                <th>eFG%</th>
+                                <th>TS%</th>
+                                <th>OR</th>
+                                <th>DR</th>
+                                <th>TR</th>
+                                <th>AST</th>
+                                <th>STL</th>
+                                <th>BLK</th>
+                                <th>TO</th>
+                                <th>攻撃権創出</th>
+                                <th>守備的圧力</th>
+                                <th>堅実性</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- チーム攻守マトリクス & チーム特性ヒートマップ -->
+            <div class="charts-grid two-col">
+                <div class="chart-card">
+                    <div id="team-off-def-chart" class="chart-box"></div>
+                </div>
+                <div class="chart-card">
+                    <div id="team-heatmap-chart" class="chart-box"></div>
+                </div>
+            </div>
+
+            <!-- チーム内得点・貢献シェア & チーム別試合推移 -->
+            <div class="charts-grid two-col">
+                <div class="chart-card">
+                    <div class="chart-card-toolbar">
+                        <label>シェア指標:
+                            <select id="team-share-metric">
+                                <option value="ポイント" selected>総得点シェア (PTS)</option>
+                                <option value="トータルリバウンド数">総リバウンドシェア (TR)</option>
+                                <option value="アシスト数">総アシストシェア (AST)</option>
+                                <option value="出場時間_分">出場時間シェア (MIN)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="team-player-share-chart" class="chart-box"></div>
+                </div>
+                <div class="chart-card">
+                    <div class="chart-card-toolbar">
+                        <label>対象チーム:
+                            <select id="team-game-log-select"></select>
+                        </label>
+                    </div>
+                    <div id="team-game-trend-chart" class="chart-box"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- =========================================================
+             TAB 4: NBAルール（ヒーブ除外）特化分析
+             ========================================================= -->
+        <section id="tab-nba" class="tab-panel">
+            <div class="nba-explainer-banner">
+                <div class="nba-banner-text">
+                    <h2>🎯 NBAルール（ヒーブ除外）によるシュート効率変化の特化分析</h2>
+                    <p>
+                        クォーター終了間際に自陣やディープエリアから放つタフなブザービーター狙いのロングシュート（ヒーブ）は、公式記録では通常の3P試投ミスとして計上されるため、果敢にシュートを狙う選手ほど3P%やeFG%が不当に低下してしまいます。<br>
+                        本分析では、<strong>『3ポイント』と『3ポイント(NBAルール)』の差分</strong>からヒーブ試投を特定し、真のシュート効率を可視化します。
+                    </p>
+                </div>
+                <div id="nba-summary-stats" class="nba-mini-kpis"></div>
+            </div>
+
+            <!-- ヒーブ影響選手 Before/After 比較グラフ & チーム別ヒーブ発生数 -->
+            <div class="charts-grid two-col">
+                <div class="chart-card">
+                    <div class="chart-card-toolbar">
+                        <label>比較指標:
+                            <select id="nba-impact-metric">
+                                <option value="3P%" selected>3P成功率 (公式 vs NBAルール)</option>
+                                <option value="eFG%">eFG% 有効FG率 (公式 vs NBAルール)</option>
+                                <option value="TS%">TS% 真のシュート効率 (公式 vs NBAルール)</option>
+                            </select>
+                        </label>
+                    </div>
+                    <div id="nba-player-impact-chart" class="chart-box"></div>
+                </div>
+                <div class="chart-card">
+                    <div id="nba-team-impact-chart" class="chart-box"></div>
+                </div>
+            </div>
+
+            <!-- 選手別 シーズン通算ヒーブ補正ランキング表 -->
+            <div class="card-section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">ヒーブ試投あり選手 シーズン通算効率比較（Before / After）</h2>
+                        <p class="section-desc">NBAルール適用によってシーズン通算の3P%・eFG%・TS%がどれだけ改善するかの選手別一覧です。</p>
+                    </div>
+                </div>
+                <div class="stats-table-container">
+                    <table id="nba-player-summary-table">
+                        <thead>
+                            <tr>
+                                <th>選手名</th>
+                                <th>チーム名</th>
+                                <th>出場試合</th>
+                                <th>ヒーブ除外本数</th>
+                                <th>公式 3P (M-A)</th>
+                                <th>NBA 3P (M-A)</th>
+                                <th>公式 3P%</th>
+                                <th>NBA 3P%</th>
+                                <th>3P% 上昇幅</th>
+                                <th>公式 eFG%</th>
+                                <th>NBA eFG%</th>
+                                <th>eFG% 上昇幅</th>
+                                <th>TS% 上昇幅</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- 試合別 ヒーブ発生ゲーム詳細ログ -->
+            <div class="card-section">
+                <div class="section-header">
+                    <div>
+                        <h2 class="section-title">ヒーブ（NBAルール除外）発生ゲーム全記録</h2>
+                        <p class="section-desc">『3ポイント』と『3ポイント(NBAルール)』に差異がある全試合レコードの詳細です。</p>
+                    </div>
+                </div>
+                <div class="stats-table-container">
+                    <table id="nba-heave-events-table">
+                        <thead>
+                            <tr>
+                                <th>試合日</th>
+                                <th>チーム名</th>
+                                <th>対戦相手</th>
+                                <th>背番号</th>
+                                <th>選手名</th>
+                                <th>出場時間</th>
+                                <th>得点</th>
+                                <th>公式 3P</th>
+                                <th>NBA 3P</th>
+                                <th>除外数</th>
+                                <th>当該試合 公式3P% → NBA3P%</th>
+                                <th>当該試合 公式eFG% → NBAeFG%</th>
+                            </tr>
+                        </thead>
+                        <tbody></tbody>
+                    </table>
+                </div>
+            </div>
+        </section>
+    </main>
+
+    <footer class="app-footer">
+        <p>Wリーグ プレミア スタッツ分析</p>
+    </footer>
+
+    <!-- =========================================================
+         用語集ポップアップモーダル
+         ========================================================= -->
+    <div id="glossary-modal" class="modal-overlay" aria-hidden="true">
+        <div class="modal-content" role="dialog" aria-modal="true" aria-labelledby="glossary-modal-title">
+            <div class="modal-header">
+                <h2 id="glossary-modal-title">📖 スタッツ略称・分析指標 用語集</h2>
+                <button type="button" id="close-glossary-btn" class="modal-close-btn" aria-label="閉じる">&times;</button>
+            </div>
+            <div class="modal-body">
+                <h3 class="glossary-cat-title">1. 基本スタッツ略称</h3>
+                <div class="glossary-table-wrap">
+                    <table class="glossary-table">
+                        <thead>
+                            <tr>
+                                <th>略称</th>
+                                <th>正式名称 / 日本語</th>
+                                <th>意味・説明</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><span class="g-tag">GP</span></td>
+                                <td>Games Played（出場試合数）</td>
+                                <td>出場時間が <code>00:00</code> より大きい試合数（DNP＝出場なしは平均計算から除外）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">GS</span></td>
+                                <td>Games Started（先発試合数）</td>
+                                <td>スターティングメンバー（先発）として出場した試合数（元データの背番号先頭に <code>*</code> が付いている試合）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">MIN</span></td>
+                                <td>Minutes Played（出場時間）</td>
+                                <td><code>出場時間</code> を分単位（例: <code>25:30</code> → <code>25.5分</code>）に換算した値</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">PTS</span></td>
+                                <td>Points（得点）</td>
+                                <td><code>ポイント</code>（1試合平均は PPG とも表記）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">2P% / 3P% / FT%</span></td>
+                                <td>各シュート成功率</td>
+                                <td><code>2ポイント</code>・<code>3ポイント</code>・<code>フリースロー</code> の「成功数 ÷ 試投数 × 100」</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">OR</span></td>
+                                <td>Offensive Rebounds</td>
+                                <td><code>オフェンスリバウンド数</code>（攻撃側のリバウンド）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">DR</span></td>
+                                <td>Defensive Rebounds</td>
+                                <td><code>ディフェンスリバウンド数</code>（守備側のリバウンド）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">TR</span></td>
+                                <td>Total Rebounds（総リバウンド）</td>
+                                <td><code>トータルリバウンド数</code>（<code>OR + DR</code> の合計。1試合平均は RPG とも表記）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">AST</span></td>
+                                <td>Assists（アシスト）</td>
+                                <td><code>アシスト数</code>（1試合平均は APG とも表記）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">STL</span></td>
+                                <td>Steals（スティール）</td>
+                                <td><code>スティール数</code>（相手からボールを奪った回数）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">BLK</span></td>
+                                <td>Blocks（ブロック）</td>
+                                <td><code>ブロック数</code>（相手のシュートをブロックした回数）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">TO</span></td>
+                                <td>Turnovers（ターンオーバー）</td>
+                                <td><code>ターンオーバー数</code>（ミス等で攻撃権を失った回数）</td>
+                            </tr>
+                            <tr>
+                                <td><span class="g-tag">PF</span></td>
+                                <td>Personal Fouls（ファウル）</td>
+                                <td><code>ファウル数</code></td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <h3 class="glossary-cat-title">2. シュート効率・アドバンスド指標</h3>
+                <div class="glossary-cards">
+                    <div class="glossary-item-card">
+                        <div class="g-card-head">
+                            <span class="g-tag accent">eFG%</span>
+                            <strong>Effective Field Goal %（有効フィールドゴール成功率）</strong>
+                        </div>
+                        <p>3Pシュートが2Pシュートの1.5倍（3点÷2点）の価値があることを加味したシュート効率指標です。</p>
+                        <div class="g-formula">計算式: <code>(FG成功数 + 0.5 × 3P成功数) ÷ FG試投数 × 100</code></div>
+                    </div>
+
+                    <div class="glossary-item-card">
+                        <div class="g-card-head">
+                            <span class="g-tag accent">TS%</span>
+                            <strong>True Shooting %（トゥルー・シューティング成功率）</strong>
+                        </div>
+                        <p>2P・3Pに加えて<strong>フリースロー（FT）も含めた総合的な得点効率</strong>です。ファウルをもらってFTで効率よく得点する選手の貢献も正確に評価できます。</p>
+                        <div class="g-formula">計算式: <code>ポイント ÷ { 2 × (FG試投数 + 0.44 × FT試投数) } × 100</code></div>
+                    </div>
+
+                    <div class="glossary-item-card">
+                        <div class="g-card-head">
+                            <span class="g-tag warn">NBAルール（ヒーブ除外）</span>
+                            <strong>クォーター終了間際のタフなロングシュート除外補正</strong>
+                        </div>
+                        <p>クォーター残り数秒で自陣等から放つブザービーター狙いの超長距離シュート（ヒーブ）のミスを個人の試投数から除外するルールです。<code>3ポイント(NBAルール)</code> を用いて真のシュート効率を算出します。</p>
+                    </div>
+
+                    <div class="glossary-item-card">
+                        <div class="g-card-head">
+                            <span class="g-tag">EFF</span>
+                            <strong>Efficiency（総合貢献度指数）</strong>
+                        </div>
+                        <p>プラス貢献（得点・リバウンド・アシスト・スティール・ブロック）からマイナス要素（シュート失敗・FT失敗・ターンオーバー）を差し引いた総合評価値です。</p>
+                        <div class="g-formula">計算式: <code>(PTS + TR + AST + STL + BLK) - (FG失敗数 + FT失敗数 + TO)</code></div>
+                    </div>
+                </div>
+
+                <h3 class="glossary-cat-title">3. ポジションレス独自評価指標（ガード〜センターを公平比較）</h3>
+                <div class="glossary-cards three-col">
+                    <div class="glossary-item-card">
+                        <div class="g-card-head">
+                            <span class="g-tag green">攻撃権創出</span>
+                            <strong>Extra Possessions</strong>
+                        </div>
+                        <p>インサイドの「オフェンスリバウンド（OR）」とアウトサイドの「スティール（STL）」を合算し、チームにどれだけ追加の攻撃機会をもたらしたかを測ります。</p>
+                        <div class="g-formula"><code>OR + STL</code></div>
+                    </div>
+
+                    <div class="glossary-item-card">
+                        <div class="g-card-head">
+                            <span class="g-tag green">守備的圧力</span>
+                            <strong>Defensive Stops</strong>
+                        </div>
+                        <p>ディフェンスリバウンド（DR）に加え、相手の攻撃を直接断ち切るスティールとブロック（Stocks）を2倍評価して守備の影響力を測ります。</p>
+                        <div class="g-formula"><code>DR + 2 × (STL + BLK)</code></div>
+                    </div>
+
+                    <div class="glossary-item-card">
+                        <div class="g-card-head">
+                            <span class="g-tag green">堅実性</span>
+                            <strong>Reliability</strong>
+                        </div>
+                        <p>1回のターンオーバー（ミス）あたり、得点・リバウンド・アシストでどれだけプラスの貢献を生み出しているかを表します。</p>
+                        <div class="g-formula"><code>(PTS + TR + AST) ÷ max(TO, 1)</code></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ローカル file:// プロトコルでも動作するデータバンドル -->
+    <script src="js/data.js"></script>
+    <!-- メインアプリケーションロジック -->
+    <script src="js/main.js"></script>
+</body>
+
+</html>
