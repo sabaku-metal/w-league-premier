@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+  <meta charset="UTF-8">
+  <title>Redirecting to Wリーグ スタッツ分析...</title>
+  <!-- 即時リダイレクト（0秒） -->
+  <meta http-equiv="refresh" content="0; url=https://sabaku-metal.github.io/w/">
+  <link rel="canonical" href="https://sabaku-metal.github.io/w/">
+  <script>
+    // クエリやハッシュ（#tab-player 等）も引き継いで新URLへ即時転送
+    var newPath = window.location.pathname.replace(/^\/w-league-premier\/?/, '/w/');
+    window.location.replace('https://sabaku-metal.github.io' + newPath + window.location.search + window.location.hash);
+  </script>
+</head>
+<body style="font-family: sans-serif; text-align: center; padding-top: 50px;">
+  <p>新しいURLへ移動しました。自動的に切り替わらない場合はこちらをクリックしてください：</p>
+  <p><a href="https://sabaku-metal.github.io/w/">https://sabaku-metal.github.io/w/</a></p>
+</body>
+</html>
